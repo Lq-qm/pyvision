@@ -1,0 +1,25 @@
+[project]
+name = "pyvision"
+version = "0.1.0"
+description = "Quebra um PDF em imagens (uma por página) e faz OCR de cada página (pdf2image + pytesseract)"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pdf2image>=1.17.0",
+    "pillow>=12.3.0",
+    "pytesseract>=0.3.13",
+]
+
+[project.scripts]
+pyvision = "main:main"
+
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+package = true
+
+[tool.hatch.build.targets.wheel]
+only-include = ["main.py"]
