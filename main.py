@@ -86,6 +86,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--tessdata-dir", default=None, help="diretório alternativo com os .traineddata")
     parser.add_argument("--timeout", type=int, default=60, help="timeout do OCR por página (s; 0 = sem limite)")
     parser.add_argument("--no-ocr", action="store_true", help="somente extrair imagens, sem OCR")
+    parser.add_argument(
+        "--text-only", action="store_true", dest="text_only",
+        help="gerar apenas o .txt final combinado (não salva as imagens em disco)",
+    )
     parser.add_argument("-q", "--quiet", action="store_true", help="não mostrar progresso página a página")
     return parser.parse_args(argv)
 
@@ -174,6 +178,9 @@ def process(args: argparse.Namespace) -> int:
     if not langs:
         raise PyvisionError("idioma(--lang) inválido")
 
+    if args.no_ocr and args.text_only:
+        raise PyvisionError("--no-ocr e --text-only são incompatíveis")
+
     tesseract_exe: str | None = None
     tessdata_dir: str | None = None
     if not args.no_ocr:
@@ -190,7 +197,8 @@ def process(args: argparse.Namespace) -> int:
         if args.output_dir
         else pdf_path.with_name(f"{pdf_path.stem}_imagens")
     )
-    out_dir.mkdir(parents=True, exist_ok=True)
+    if not args.text_only:
+        out_dir.mkdir(parents=True, exist_ok=True)
 
     log("lendo PDF...")
     try:
@@ -221,13 +229,16 @@ def process(args: argparse.Namespace) -> int:
     ext = IMAGE_FORMATS[args.img_format]
     save_kwargs = {"quality": 95} if ext == ".jpg" else {}
 
-    log(f"processando {len(pages)} de {total} páginas → {out_dir}")
+    log(f"processando {len(pages)} de {total} páginas")
     results: list[PageResult] = []
     for idx, n in enumerate(pages, start=1):
         img = images[n - pages[0]]
-        image_path = out_dir / f"page_{n:03d}{ext}"
-        img.save(image_path, **save_kwargs)
-        result = PageResult(number=n, image_path=image_path)
+        result = PageResult(number=n, image_path=None)  # type: ignore[arg-type]
+
+        if not args.text_only:
+            image_path = out_dir / f"page_{n:03d}{ext}"
+            img.save(image_path, **save_kwargs)
+            result.image_path = image_path
 
         if tesseract_exe:
             try:
@@ -240,18 +251,17 @@ def process(args: argparse.Namespace) -> int:
                 raise PyvisionError(f"tesseract não encontrado: {exc}") from exc
             except TesseractError as exc:
                 result.error = str(exc).strip()
-                log(f"  [{idx}/{len(pages)}] página {n}: IMAGEM ok, FALHA no OCR — {result.error}")
+                log(f"  [{idx}/{len(pages)}] página {n}: FALHA no OCR — {result.error}")
                 results.append(result)
                 continue
             text = text.strip()
             result.text = text + "\n" if text else ""
-            text_path = out_dir / f"page_{n:03d}.txt"
-            text_path.write_text(result.text, encoding="utf-8")
-            result.text_path = text_path
+            if not args.text_only:
+                text_path = out_dir / f"page_{n:03d}.txt"
+                text_path.write_text(result.text, encoding="utf-8")
+                result.text_path = text_path
             if not args.quiet:
-                log(f"  [{idx}/{len(pages)}] página {n}: {image_path.name} + OCR ({len(result.text)} chars)")
-        elif not args.quiet:
-            log(f"  [{idx}/{len(pages)}] página {n}: {image_path.name}")
+                log(f"  [{idx}/{len(pages)}] página {n}: OCR ({len(result.text)} chars)")
 
         results.append(result)
 
@@ -259,15 +269,18 @@ def process(args: argparse.Namespace) -> int:
     combined: Path | None = None
     if tesseract_exe:
         parts = [f"===== PÁGINA {r.number} =====\n{r.text.rstrip()}\n" for r in results if r.error is None]
-        combined = out_dir / "ocr_completo.txt"
+        combined = out_dir / "ocr_completo.txt" if not args.text_only else Path("ocr_completo.txt")
         combined.write_text("\n".join(parts), encoding="utf-8")
 
     log("")
-    log(f"concluído: {len(results)} página(s) → {out_dir}")
-    log(f"  imagens: {ext} (uma por página)")
+    if args.text_only:
+        log(f"concluído: {len(results)} página(s) → {combined}")
+    else:
+        log(f"concluído: {len(results)} página(s) → {out_dir}")
+        log(f"  imagens: {ext} (uma por página)")
     if tesseract_exe:
         ok = [r for r in results if r.error is None]
-        log(f"  OCR: {sum(len(r.text) for r in ok)} chars no total (por página em .txt + {combined.name})")
+        log(f"  OCR: {sum(len(r.text) for r in ok)} chars no total")
     failed = [r.number for r in results if r.error]
     if failed:
         log(f"  AVISO: OCR falhou nas página(s): {', '.join(map(str, failed))}")

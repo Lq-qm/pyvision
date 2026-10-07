@@ -44,6 +44,9 @@ uv run pyvision documento.pdf --pages 1-5,8 -f jpg
 # somente imagens, sem OCR
 uv run pyvision documento.pdf --no-ocr
 
+# gerar apenas o .txt final (sem salvar imagens em disco)
+uv run pyvision documento.pdf --text-only
+
 # múltiplos idiomas
 uv run pyvision documento.pdf -l por+eng
 ```
@@ -62,6 +65,7 @@ Também funciona com `uv run main.py ...` (o `main.py` é o mesmo script).
 | `--tessdata-dir` | — | diretório alternativo de `.traineddata` |
 | `--timeout` | `60` | timeout do OCR por página (s; `0` = sem limite) |
 | `--no-ocr` | — | só extrai imagens |
+| `--text-only` | — | gera apenas o `ocr_completo.txt` final (sem salvar imagens) |
 | `-q, --quiet` | — | sem progresso página a página |
 
 ## Saída
